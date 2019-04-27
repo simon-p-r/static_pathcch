@@ -28,12 +28,12 @@ typedef BOOLEAN(NTAPI *PFN_RTLARELONGPATHSENABLED)(void);
 
 WINPATHCCHWORKERAPI AreLongPathsEnabled(void)
 {
-    static PVOID fpRtlAreLongPathsEnabled;
+    static PVOID pRtlAreLongPathsEnabled;
     HMODULE hModule;
     PVOID fp;
     PVOID tp;
 
-    fp = InterlockedCompareExchangePointer(&fpRtlAreLongPathsEnabled, NULLPTR, NULLPTR);
+    fp = InterlockedCompareExchangePointer(&pRtlAreLongPathsEnabled, NULLPTR, NULLPTR);
     if ( !fp ) {
         hModule = GetModuleHandleW(L"ntdll.dll");
         if ( !hModule )
@@ -43,7 +43,7 @@ WINPATHCCHWORKERAPI AreLongPathsEnabled(void)
         if ( !fp )
             return false;
 
-        tp = InterlockedCompareExchangePointer(&fpRtlAreLongPathsEnabled, fp, NULLPTR);
+        tp = InterlockedCompareExchangePointer(&pRtlAreLongPathsEnabled, fp, NULLPTR);
         if ( tp )
             fp = tp;
     }
@@ -639,7 +639,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
     size_t cchMore;
     PCWCHAR pLastChar = NULLPTR;
     size_t cchPathOut = 0;
-    size_t cchMax = (dwFlags & (PATHCCH_ALLOW_LONG_PATHS | PATHCCH_ENSURE_IS_EXTENDED_LENGTH_PATH)) ? PATHCCH_MAX_CCH : MAX_PATH;
+    size_t cchMax;
     PWSTR pszPathOut;
     HRESULT hr;
 
@@ -669,6 +669,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
             cchPathOut += cchMore + 1;
         }
     }
+
     if ( (dwFlags & PATHCCH_ENSURE_TRAILING_SLASH) && pLastChar && *pLastChar != '\\' )
         ++cchPathOut;
 
@@ -676,6 +677,10 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
         cchPathOut = 2;
 
     ExtraSpaceIfNeeded(dwFlags, &cchPathOut);
+
+    cchMax = (dwFlags & (PATHCCH_ALLOW_LONG_PATHS | PATHCCH_ENSURE_IS_EXTENDED_LENGTH_PATH))
+        ? PATHCCH_MAX_CCH
+        : MAX_PATH;
 
     if ( cchPathOut > cchMax )
         cchPathOut = cchMax;
@@ -703,7 +708,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
     HRESULT hr;
     size_t cchPathIn;
     size_t cchPathOut = 0;
-    size_t cchMax = (dwFlags & (PATHCCH_ALLOW_LONG_PATHS | PATHCCH_ENSURE_IS_EXTENDED_LENGTH_PATH)) ? PATHCCH_MAX_CCH : MAX_PATH;
+    size_t cchMax;
 
     if ( !ppszPathOut )
         return E_INVALIDARG;
@@ -726,6 +731,10 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
         cchPathOut = 2;
 
     ExtraSpaceIfNeeded(dwFlags, &cchPathOut);
+
+    cchMax = (dwFlags & (PATHCCH_ALLOW_LONG_PATHS | PATHCCH_ENSURE_IS_EXTENDED_LENGTH_PATH))
+        ? PATHCCH_MAX_CCH
+        : MAX_PATH;
 
     if ( cchPathOut > cchMax )
         cchPathOut = cchMax;
