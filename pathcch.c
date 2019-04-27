@@ -131,8 +131,6 @@ WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
     _In_ PCWSTR pszPath,
     _Outptr_opt_ PCWSTR *ppszServer)
 {
-    PCWSTR pszServer;
-
     if ( ppszServer )
         *ppszServer = NULLPTR;
 
