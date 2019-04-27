@@ -17,9 +17,6 @@
 #define EXTENDED_PATH_PREFIX L"\\\\?\\"
 #define EXTENDED_PATH_PREFIX_LEN (ARRAYSIZE(EXTENDED_PATH_PREFIX) - 1)
 
-#define UNC_PREFIX L"\\\\?\\UNC\\"
-#define UNC_PREFIX_LEN (ARRAYSIZE(UNC_PREFIX) - 1)
-
 #define PATHCCH_FORCE_ENABLE_DISABLE_LONG_NAME_PROCESS (PATHCCH_FORCE_ENABLE_LONG_NAME_PROCESS | PATHCCH_FORCE_DISABLE_LONG_NAME_PROCESS)
 #define PATHCCH_FORCE_DISABLE_LONG_PATHS (PATHCCH_ALLOW_LONG_PATHS | PATHCCH_FORCE_DISABLE_LONG_NAME_PROCESS)
 
@@ -75,12 +72,12 @@ WINPATHCCHWORKERAPI IsExtendedLengthDosDevicePath(PCWSTR pszPath)
 
 WINPATHCCHWORKERAPI StringIsGUID(PCWSTR pszString)
 {
-    const WCHAR s[] = L"{00000000-0000-0000-0000-000000000000}";
+    const WCHAR szNullGuid[] = L"{00000000-0000-0000-0000-000000000000}";
     WCHAR c;
 
-    for ( size_t i = 0; i < ARRAYSIZE(s) - 1; ++i ) {
+    for ( size_t i = 0; i < 38; ++i ) {
         c = pszString[i];
-        if ( c != s[i] && (s[i] != '0' || (c < '0' || c > '9') && (c < 'A' || c > 'F') && (c < 'a' || c > 'f')) )
+        if ( c != szNullGuid[i] && (szNullGuid[i] != '0' || (c < '0' || c > '9') && (c < 'A' || c > 'F') && (c < 'a' || c > 'f')) )
             return false;
     }
     return true;
@@ -622,7 +619,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
         return E_INVALIDARG;
 
     if ( PathIsUNCEx(pszPath, &pszSrc) ) {
-        if ( cchPath < UNC_PREFIX_LEN )
+        if ( cchPath < pszSrc - pszPath )
             return E_INVALIDARG;
     } else {
         pszSrc = pszPath + EXTENDED_PATH_PREFIX_LEN;
