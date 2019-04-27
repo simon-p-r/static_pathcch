@@ -14,6 +14,8 @@
 
 #define WINPATHCCHWORKERAPI static __inline bool __fastcall
 
+#define VOLUME_GUID_LEN (ARRAYSIZE(L"{00000000-0000-0000-0000-000000000000}") - 1)
+
 #define EXTENDED_PATH_PREFIX L"\\\\?\\"
 #define EXTENDED_PATH_PREFIX_LEN (ARRAYSIZE(EXTENDED_PATH_PREFIX) - 1)
 
@@ -21,7 +23,6 @@
 #define PATHCCH_FORCE_DISABLE_LONG_PATHS (PATHCCH_ALLOW_LONG_PATHS | PATHCCH_FORCE_DISABLE_LONG_NAME_PROCESS)
 
 typedef BOOLEAN(NTAPI *PFN_RTLARELONGPATHSENABLED)(void);
-
 
 WINPATHCCHWORKERAPI AreLongPathsEnabled(void)
 {
@@ -47,7 +48,6 @@ WINPATHCCHWORKERAPI AreLongPathsEnabled(void)
     return ((PFN_RTLARELONGPATHSENABLED)fp)();
 }
 
-
 WINPATHCCHWORKERAPI IsValidExtension(PCWSTR pszExt)
 {
     size_t cchExt;
@@ -63,33 +63,66 @@ WINPATHCCHWORKERAPI IsValidExtension(PCWSTR pszExt)
         && (!cchExt || !wcschr(pszExt + 1, '.'));
 }
 
-
-WINPATHCCHWORKERAPI IsExtendedLengthDosDevicePath(PCWSTR pszPath)
+WINPATHCCHWORKERAPI StrStartsWith(PCWSTR s1, PCWSTR s2)
 {
-    return !wcsncmp(pszPath, EXTENDED_PATH_PREFIX, EXTENDED_PATH_PREFIX_LEN);
-}
+    if ( !s1 || !s2 )
+        return false;
 
+    if ( s1 == s2 )
+        return true;
 
-WINPATHCCHWORKERAPI StringIsGUID(PCWSTR pszString)
-{
-    const WCHAR szNullGuid[] = L"{00000000-0000-0000-0000-000000000000}";
-    WCHAR c;
+    while ( *s1 ) {
+        if ( !*s2 )
+            return true;
 
-    for ( size_t i = 0; i < 38; ++i ) {
-        c = pszString[i];
-        if ( c != szNullGuid[i] && (szNullGuid[i] != '0' || (c < '0' || c > '9') && (c < 'A' || c > 'F') && (c < 'a' || c > 'f')) )
+        if ( *s1++ != *s2++ )
             return false;
     }
     return true;
 }
 
+WINPATHCCHWORKERAPI StrStartsWithCaseInsensitive(PCWSTR s1, PCWSTR s2)
+{
+    if ( !s1 || !s2 )
+        return false;
+
+    if ( s1 == s2 )
+        return true;
+
+    while ( *s1 ) {
+        if ( !*s2 )
+            return true;
+
+        if ( __ascii_towlower(*s1++) != __ascii_towlower(*s2++) )
+            return false;
+    }
+    return false;
+}
+
+WINPATHCCHWORKERAPI IsExtendedLengthDosDevicePath(PCWSTR pszPath)
+{
+    return StrStartsWith(pszPath, EXTENDED_PATH_PREFIX);
+}
+
+WINPATHCCHWORKERAPI StringIsGUID(PCWSTR pszString)
+{
+    const WCHAR szNullGuid[] = L"{00000000-0000-0000-0000-000000000000}";
+    WCHAR c, d;
+
+    for ( size_t i = 0; i < ARRAYSIZE(szNullGuid); ++i ) {
+        c = pszString[i];
+        d = szNullGuid[i];
+        if ( c != d && (d != '0' || !isxdigit(c)) )
+            return false;
+    }
+    return true;
+}
 
 WINPATHCCHWORKERAPI PathIsVolumeGUID(PCWSTR pszPath)
 {
-    return !_wcsnicmp(pszPath, VOLUME_PREFIX, VOLUME_PREFIX_LEN)
+    return StrStartsWithCaseInsensitive(pszPath, VOLUME_PREFIX)
         && StringIsGUID(pszPath + VOLUME_PREFIX_LEN);
 }
-
 
 WINPATHCCHWORKERAPI AreOptionsValidAndOptInLongPathAwareProcess(ULONG *pdwFlags)
 {
@@ -110,7 +143,6 @@ WINPATHCCHWORKERAPI AreOptionsValidAndOptInLongPathAwareProcess(ULONG *pdwFlags)
     return Flags & PATHCCH_FORCE_ENABLE_DISABLE_LONG_NAME_PROCESS;
 }
 
-
 WINPATHCCHWORKERAPI ExtraSpaceIfNeeded(ULONG dwFlags, size_t *pcch)
 {
     if ( (dwFlags & PATHCCH_ENSURE_IS_EXTENDED_LENGTH_PATH)
@@ -120,7 +152,6 @@ WINPATHCCHWORKERAPI ExtraSpaceIfNeeded(ULONG dwFlags, size_t *pcch)
     }
     return false;
 }
-
 
 WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
     _In_ PCWSTR pszPath,
@@ -134,7 +165,7 @@ WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
 
     if ( *pszPath == '?' ) {
         ++pszPath;
-        if ( _wcsnicmp(pszPath, L"\\UNC\\", 5) )
+        if ( StrStartsWithCaseInsensitive(pszPath, L"\\UNC\\") )
             return FALSE;
 
         pszPath += 5;
@@ -144,7 +175,6 @@ WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
     return TRUE;
 }
 
-
 WINPATHCCHAPI BOOL APIENTRY PathCchIsRoot(
     _In_opt_ PCWSTR pszPath)
 {
@@ -153,8 +183,8 @@ WINPATHCCHAPI BOOL APIENTRY PathCchIsRoot(
     if ( !pszPath || !*pszPath )
         return FALSE;
 
-    if ( (iswalpha(*pszPath) && !_wcsnicmp(pszPath + 1, L":\\", 3))
-        || (*pszPath == '\\' && !pszPath[1]) ) {
+    if ( (iswalpha(*pszPath) && !wcscmp(pszPath + 1, L":\\"))
+        || !wcscmp(pszPath, L"\\") ) {
         return TRUE;
     }
     if ( PathIsUNCEx(pszPath, &pszServer) ) {
@@ -169,16 +199,15 @@ WINPATHCCHAPI BOOL APIENTRY PathCchIsRoot(
     }
     if ( IsExtendedLengthDosDevicePath(pszPath) ) {
         pszServer = pszPath + EXTENDED_PATH_PREFIX_LEN;
-        if ( iswalpha(*pszServer++) && !_wcsnicmp(pszServer, L":\\", 3) && !pszServer[3] )
+        if ( iswalpha(*pszServer) && !wcscmp(pszServer + 1, L":\\") )
             return true;
 
-        pszServer = pszPath + VOLUME_PREFIX_LEN + 38;
-        if ( PathIsVolumeGUID(pszPath) && *pszServer == '\\' && !pszServer[1] )
+        pszServer = pszPath + VOLUME_PREFIX_LEN + VOLUME_GUID_LEN;
+        if ( PathIsVolumeGUID(pszPath) && !wcscmp(pszServer, L"\\") )
             return true;
     }
     return false;
 }
-
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchAddBackslashEx(
     _Inout_updates_(cchPath) PWSTR pszPath,
@@ -215,14 +244,12 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchAddBackslashEx(
     return hr;
 }
 
-
 WINPATHCCHAPI HRESULT APIENTRY PathCchAddBackslash(
     _Inout_updates_(cchPath) PWSTR pszPath,
     _In_ size_t cchPath)
 {
     return PathCchAddBackslashEx(pszPath, cchPath, NULLPTR, NULLPTR);
 }
-
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveBackslashEx(
     _Inout_updates_(_Inexpressible_(cchPath)) PWSTR pszPath,
@@ -263,14 +290,12 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveBackslashEx(
     return hr;
 }
 
-
 WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveBackslash(
     _Inout_updates_(cchPath) PWSTR pszPath,
     _In_ size_t cchPath)
 {
     return PathCchRemoveBackslashEx(pszPath, cchPath, NULLPTR, NULLPTR);
 }
-
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchSkipRoot(
     _In_ PCWSTR pszPath,
@@ -299,7 +324,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchSkipRoot(
         return S_OK;
     }
     if ( PathIsVolumeGUID(pszPath) ) {
-        pszPath += VOLUME_PREFIX_LEN + 38;
+        pszPath += VOLUME_PREFIX_LEN + VOLUME_GUID_LEN;
     } else {
         if ( IsExtendedLengthDosDevicePath(pszPath) )
             pszPath += EXTENDED_PATH_PREFIX_LEN;
@@ -310,7 +335,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchSkipRoot(
     *ppszRootEnd = (*pszPath == '\\') ? pszPath + 1 : pszPath;
     return S_OK;
 }
-
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchStripToRoot(
     _Inout_updates_(_Inexpressible_(cchPath)) PWSTR pszPath,
@@ -340,7 +364,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripToRoot(
     *pszPath = '\0';
     return hr;
 }
-
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveFileSpec(
     _Inout_updates_(_Inexpressible_(cchPath)) PWSTR pszPath,
@@ -376,7 +399,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveFileSpec(
     hr = PathCchRemoveBackslash(pszPath, cchPath);
     return (SUCCEEDED(hr) && flag) ? S_OK : hr;
 }
-
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchFindExtension(
     _In_reads_(_Inexpressible_(cchPath)) PCWSTR pszPath,
@@ -419,7 +441,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchFindExtension(
     return S_OK;
 }
 
-
 WINPATHCCHAPI HRESULT APIENTRY PathCchAddExtension(
     _Inout_updates_(cchPath) PWSTR pszPath,
     _In_ size_t cchPath,
@@ -444,7 +465,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchAddExtension(
     if ( *pszDest )
         return S_FALSE;
 
-    if ( !*pszExt || *pszExt == '.' && !pszExt[1] )
+    if ( !*pszExt || !wcscmp(pszExt, L".") )
         return S_OK;
 
     cchRemaining = (cchPath - (pszDest - pszPath));
@@ -467,7 +488,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchAddExtension(
     return CO_E_PATHTOOLONG;
 }
 
-
 WINPATHCCHAPI HRESULT APIENTRY PathCchRenameExtension(
     _Inout_updates_(cchPath) PWSTR pszPath,
     _In_ size_t cchPath,
@@ -489,7 +509,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchRenameExtension(
     if ( FAILED(hr) )
         return hr;
 
-    if ( !*pszExt || (*pszExt == '.' && !pszExt[1]) ) {
+    if ( !*pszExt || !wcscmp(pszExt, L".") ) {
         *pszDest = '\0';
         return S_OK;
     }
@@ -511,7 +531,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchRenameExtension(
     }
     return CO_E_PATHTOOLONG;
 }
-
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveExtension(
     _Inout_updates_(_Inexpressible_(cchPath)) PWSTR pszPath,
@@ -537,7 +556,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveExtension(
     return S_FALSE;
 }
 
-
 /* PATHCCH_OPTIONS */WINPATHCCHAPI HRESULT APIENTRY PathCchCanonicalizeEx(
     _Out_writes_(cchPathOut) PWSTR pszPathOut,
     _In_ size_t cchPathOut,
@@ -547,7 +565,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveExtension(
     return E_NOTIMPL;
 }
 
-
 WINPATHCCHAPI HRESULT APIENTRY PathCchCanonicalize(
     _Out_writes_(cchPathOut) PWSTR pszPathOut,
     _In_ size_t cchPathOut,
@@ -555,7 +572,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchCanonicalize(
 {
     return PathCchCanonicalizeEx(pszPathOut, cchPathOut, pszPathIn, 0);
 }
-
 
 /* PATHCCH_OPTIONS */WINPATHCCHAPI HRESULT APIENTRY PathCchCombineEx(
     _Out_writes_(cchPathOut) PWSTR pszPathOut,
@@ -567,7 +583,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchCanonicalize(
     return E_NOTIMPL;
 }
 
-
 WINPATHCCHAPI HRESULT APIENTRY PathCchCombine(
     _Out_writes_(cchPathOut) PWSTR pszPathOut,
     _In_ size_t cchPathOut,
@@ -576,7 +591,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchCombine(
 {
     return PathCchCombineEx(pszPathOut, cchPathOut, pszPathIn, pszMore, 0);
 }
-
 
 /* PATHCCH_OPTIONS */WINPATHCCHAPI HRESULT APIENTRY PathCchAppendEx(
     _Inout_updates_(cchPath) PWSTR pszPath,
@@ -597,7 +611,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchCombine(
     return PathCchCombineEx(pszPath, cchPath, pszPath, pszMore, dwFlags);
 }
 
-
 WINPATHCCHAPI HRESULT APIENTRY PathCchAppend(
     _Inout_updates_(cchPath) PWSTR pszPath,
     _In_ size_t cchPath,
@@ -605,7 +618,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchAppend(
 {
     return PathCchAppendEx(pszPath, cchPath, pszMore, 0);
 }
-
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
     _Inout_updates_(cchPath) PWSTR pszPath,
@@ -632,7 +644,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
     }
     return StringCchCopyW(pszPath, cchPath, pszSrc);
 }
-
 
 /* PATHCCH_OPTIONS */WINPATHCCHAPI HRESULT APIENTRY PathAllocCombine(
     _In_opt_ PCWSTR pszPathIn,
@@ -702,7 +713,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
     *ppszPathOut = pszPathOut;
     return S_OK;
 }
-
 
 /* PATHCCH_OPTIONS */WINPATHCCHAPI HRESULT APIENTRY PathAllocCanonicalize(
     _In_ PCWSTR pszPathIn,
