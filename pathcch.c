@@ -118,7 +118,7 @@ WINPATHCCHWORKERAPI ExtraSpaceIfNeeded(ULONG dwFlags, size_t *pcch)
 {
     if ( (dwFlags & PATHCCH_ENSURE_IS_EXTENDED_LENGTH_PATH)
         || (*pcch > MAX_PATH && (dwFlags & PATHCCH_FORCE_DISABLE_LONG_PATHS) == PATHCCH_FORCE_DISABLE_LONG_PATHS) ) {
-        *pcch += EXTENDED_PATH_PREFIX_LEN;
+        *pcch += EXTENDED_PATH_PREFIX_LEN + 2;
         return true;
     }
     return false;
@@ -131,16 +131,24 @@ WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
     _In_ PCWSTR pszPath,
     _Outptr_opt_ PCWSTR *ppszServer)
 {
+    PCWSTR pszServer;
+
     if ( ppszServer )
         *ppszServer = NULLPTR;
 
-    if ( !_wcsnicmp(pszPath, UNC_PREFIX, UNC_PREFIX_LEN) ) {
-        if ( ppszServer )
-            *ppszServer = pszPath + UNC_PREFIX_LEN;
+    if ( *pszPath++ != '\\' || *pszPath++ != '\\' )
+        return FALSE;
 
-        return TRUE;
+    if ( *pszPath == '?' ) {
+        ++pszPath;
+        if ( _wcsnicmp(pszPath, L"\\UNC\\", 5) )
+            return FALSE;
+
+        pszPath += 5;
     }
-    return FALSE;
+    if ( ppszServer )
+        *ppszServer = pszPath;
+    return TRUE;
 }
 #pragma warning( pop )
 
@@ -148,14 +156,12 @@ WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
 WINPATHCCHAPI BOOL APIENTRY PathCchIsRoot(
     _In_opt_ PCWSTR pszPath)
 {
-    const WCHAR str[] = L":\\";
-    const size_t len = ARRAYSIZE(str) - 1;
     PCWSTR pszServer;
 
     if ( !pszPath || !*pszPath )
         return FALSE;
 
-    if ( (iswalpha(*pszPath) && !_wcsnicmp(pszPath + 1, str, len))
+    if ( (iswalpha(*pszPath) && !_wcsnicmp(pszPath + 1, L":\\", 3))
         || (*pszPath == '\\' && !pszPath[1]) ) {
         return TRUE;
     }
@@ -171,7 +177,7 @@ WINPATHCCHAPI BOOL APIENTRY PathCchIsRoot(
     }
     if ( IsExtendedLengthDosDevicePath(pszPath) ) {
         pszServer = pszPath + EXTENDED_PATH_PREFIX_LEN;
-        if ( iswalpha(*pszServer++) && !_wcsnicmp(pszServer, str, len) && !pszServer[len] )
+        if ( iswalpha(*pszServer++) && !_wcsnicmp(pszServer, L":\\", 3) && !pszServer[3] )
             return true;
 
         pszServer = pszPath + VOLUME_PREFIX_LEN + 38;
@@ -294,7 +300,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchSkipRoot(
         return S_OK;
     }
     if ( PathIsVolumeGUID(pszPath) ) {
-        pszPath += VOLUME_PREFIX_LEN;
+        pszPath += VOLUME_PREFIX_LEN + 38;
     } else {
         if ( IsExtendedLengthDosDevicePath(pszPath) )
             pszPath += EXTENDED_PATH_PREFIX_LEN;
