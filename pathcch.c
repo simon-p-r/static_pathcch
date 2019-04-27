@@ -122,8 +122,6 @@ WINPATHCCHWORKERAPI ExtraSpaceIfNeeded(ULONG dwFlags, size_t *pcch)
 }
 
 
-#pragma warning( push )
-#pragma warning( disable : 6387 28196 )
 WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
     _In_ PCWSTR pszPath,
     _Outptr_opt_ PCWSTR *ppszServer)
@@ -145,7 +143,6 @@ WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
         *ppszServer = pszPath;
     return TRUE;
 }
-#pragma warning( pop )
 
 
 WINPATHCCHAPI BOOL APIENTRY PathCchIsRoot(
@@ -227,8 +224,6 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchAddBackslash(
 }
 
 
-#pragma warning( push )
-#pragma warning( disable : 6387 28196 )
 WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveBackslashEx(
     _Inout_updates_(_Inexpressible_(cchPath)) PWSTR pszPath,
     _In_ size_t cchPath,
@@ -236,6 +231,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveBackslashEx(
     _Out_opt_ size_t *pcchRemaining)
 {
     size_t len;
+    HRESULT hr = S_FALSE;
 
     if ( ppszEnd )
         *ppszEnd = NULLPTR;
@@ -246,18 +242,26 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveBackslashEx(
     if ( len >= cchPath )
         return E_INVALIDARG;
 
-    if ( !len || pszPath[len - 1] != '\\' || PathCchIsRoot(pszPath) )
-        return S_FALSE;
+    if ( len ) {
+        if ( pszPath[len - 1] == '\\' ) {
+            --len;
+            if ( !PathCchIsRoot(pszPath) ) {
+                pszPath[len] = '\0';
+                hr = S_OK;
+            }
+        }
+        pszPath += len;
+        cchPath -= len;
+    }
 
     pszPath[--len] = '\0';
 
     if ( ppszEnd )
-        *ppszEnd = pszPath + len;
+        *ppszEnd = pszPath;
     if ( pcchRemaining )
-        *pcchRemaining = cchPath - len;
-    return S_OK;
+        *pcchRemaining = cchPath;
+    return hr;
 }
-#pragma warning( pop )
 
 
 WINPATHCCHAPI HRESULT APIENTRY PathCchRemoveBackslash(
