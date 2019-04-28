@@ -16,8 +16,14 @@
 
 #define VOLUME_GUID_LEN (ARRAYSIZE(L"{00000000-0000-0000-0000-000000000000}") - 1)
 
+#define UNC_PATH_PREFIX L"\\\\"
+#define UNC_PATH_PREFIX_LEN (ARRAYSIZE(UNC_PATH_PREFIX) - 1)
+
 #define EXTENDED_PATH_PREFIX L"\\\\?\\"
 #define EXTENDED_PATH_PREFIX_LEN (ARRAYSIZE(EXTENDED_PATH_PREFIX) - 1)
+
+#define EXTENDED_UNC_PATH_PREFIX L"\\\\?\\UNC\\"
+#define EXTENDED_UNC_PATH_PREFIX_LEN (ARRAYSIZE(EXTENDED_UNC_PATH_PREFIX) - 1)
 
 #define PATHCCH_FORCE_ENABLE_DISABLE_LONG_NAME_PROCESS (PATHCCH_FORCE_ENABLE_LONG_NAME_PROCESS | PATHCCH_FORCE_DISABLE_LONG_NAME_PROCESS)
 #define PATHCCH_FORCE_DISABLE_LONG_PATHS (PATHCCH_ALLOW_LONG_PATHS | PATHCCH_FORCE_DISABLE_LONG_NAME_PROCESS)
@@ -165,7 +171,7 @@ WINPATHCCHAPI BOOL APIENTRY PathIsUNCEx(
 
     if ( *pszPath == '?' ) {
         ++pszPath;
-        if ( StrStartsWithCaseInsensitive(pszPath, L"\\UNC\\") )
+        if ( !StrStartsWithCaseInsensitive(pszPath, L"\\UNC\\") )
             return FALSE;
 
         pszPath += 5;
@@ -198,12 +204,12 @@ WINPATHCCHAPI BOOL APIENTRY PathCchIsRoot(
         return TRUE;
     }
     if ( IsExtendedLengthDosDevicePath(pszPath) ) {
-        pszServer = pszPath + EXTENDED_PATH_PREFIX_LEN;
-        if ( iswalpha(*pszServer) && !wcscmp(pszServer + 1, L":\\") )
+        if ( iswalpha(pszPath[EXTENDED_PATH_PREFIX_LEN])
+            && !wcscmp(pszPath + EXTENDED_PATH_PREFIX_LEN + 1, L":\\") )
             return true;
 
-        pszServer = pszPath + VOLUME_PREFIX_LEN + VOLUME_GUID_LEN;
-        if ( PathIsVolumeGUID(pszPath) && !wcscmp(pszServer, L"\\") )
+        if ( PathIsVolumeGUID(pszPath)
+            && !wcscmp(pszPath + VOLUME_PREFIX_LEN + VOLUME_GUID_LEN, L"\\") )
             return true;
     }
     return false;
@@ -635,7 +641,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
         return E_INVALIDARG;
 
     if ( PathIsUNCEx(pszPath, &pszSrc) ) {
-        if ( cchPath < pszSrc - pszPath )
+        if ( cchPath < EXTENDED_UNC_PATH_PREFIX_LEN )
             return E_INVALIDARG;
     } else {
         pszSrc = pszPath + EXTENDED_PATH_PREFIX_LEN;
@@ -664,7 +670,7 @@ WINPATHCCHAPI HRESULT APIENTRY PathCchStripPrefix(
 
     *ppszPathOut = NULLPTR;
 
-    if ( !AreOptionsValidAndOptInLongPathAwareProcess(&dwFlags) || !pszPathIn && !pszMore )
+    if ( !AreOptionsValidAndOptInLongPathAwareProcess(&dwFlags) || (!pszPathIn && !pszMore) )
         return E_INVALIDARG;
 
     if ( pszPathIn ) {
